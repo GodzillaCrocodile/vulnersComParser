@@ -46,7 +46,6 @@ def worker(inPath, outPathFile, pattern, searchObject):
                         'cvss': ''
                     }
                     for prefix, event, value in parser:
-
                         if prefix == '_index._index' == 'bulletins':
                             id, title, url, type, descr, cve, cvss = None, None, None, None, None, [], None
                             searchDict = {

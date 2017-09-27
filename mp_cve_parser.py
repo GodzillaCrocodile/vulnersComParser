@@ -18,13 +18,16 @@ def file_writer(outPathFile, data):
                 f"References: {'; '.join(data[id]['references'])}\n\t"
                 f"CVE: {'; '.join(data[id]['cve'])}\n\t"
                 f"CVSS: {data[id]['cvss']}\n\t"
+                # f"Host: {'; '.join(data[id]['host'])}\n\t"
+                # f"Soft: {'; '.join(data[id]['soft'])}\n\t"
                 f"Type: {data[id]['type']}\n\n"
             )
     print(f'[+] Write {len(data)} entries to {outPathFile}')
 
 
-def vulners_parser(in_file, out_path, pattern, search_object):
+def vulners_parser(in_file, out_path, search_object, in_dict):
     print('[+] Vulners.com parser starts')
+    startTime = datetime.now()
     zFile = ZipFile(in_file, 'r')
     for finfo in zFile.infolist():
         iFile = zFile.open(finfo)
@@ -39,8 +42,12 @@ def vulners_parser(in_file, out_path, pattern, search_object):
             'url': '',
             'description': '',
             'cve': '',
-            'cvss': ''
+            'cvss': '',
+            'host': '',
+            'soft': ''
         }
+        findCount = 0
+        totalCVECount = len(in_dict)
         for prefix, event, value in parser:
             if prefix == '_index._index' == 'bulletins':
                 id, references, title, url, type, descr, cve, cvss = None, [], None, None, None, None, [], None
@@ -51,7 +58,9 @@ def vulners_parser(in_file, out_path, pattern, search_object):
                     'url': '',
                     'description': '',
                     'cve': '',
-                    'cvss': ''
+                    'cvss': '',
+                    'host': '',
+                    'soft': ''
                 }
             elif prefix == 'item._id':
                 id = value
@@ -77,9 +86,10 @@ def vulners_parser(in_file, out_path, pattern, search_object):
                 cve.append(value)
                 searchDict['cve'] = cve
 
-            if id and title and url and type and references and descr and cvss:
-                if id == 'CVE-2005-1712':
-                    print(f'[+] Find in {search_object}: {searchDict[search_object]}')
+            if id and title and url and type and descr and cvss:
+                if id in in_dict:
+                    findCount += 1
+                    print(f'[+] {findCount}/{totalCVECount}. Find in {search_object}: {searchDict[search_object]}. Number of hosts: {len(in_dict[id]["host"])}')
                     data[id] = {
                         'id': id,
                         'references': references,
@@ -87,9 +97,11 @@ def vulners_parser(in_file, out_path, pattern, search_object):
                         'url': url,
                         'type': type,
                         'cve': cve,
-                        'cvss': cvss
+                        'cvss': cvss,
+                        'host': in_dict[id]['host'],
+                        'soft': in_dict[id]['soft']
                     }
-                    break
+                    in_dict.pop(id)
                 id, references, title, url, descr, type, cve, cvss = None, [], None, None, None, None, [], None
                 continue
             else:
@@ -97,8 +109,18 @@ def vulners_parser(in_file, out_path, pattern, search_object):
 
         if data:
             file_writer(os.path.join(out_path, 'out.txt'), data)
-            dump_data(os.path.join(out_path, 'vulners.pkl'), searchDict)
-    print('[+] Vulners.com parser ends')
+
+        if in_dict:
+            with open('not_found.txt', 'w') as fOut:
+                fOut.write('\n'.join([cve for cve in in_dict]))
+            print(f'[+] {len(in_dict)} entries not found. Write to "not_found.txt"')
+        # if searchDict:
+        #     dump_data(os.path.join(out_path, 'vulners.pkl'), searchDict)
+    print(f'[+] Total processed entries: {len(in_dict) + findCount}/{totalCVECount}')
+    endTime = datetime.now()
+    seconds = (endTime - startTime).seconds
+    print(f'[*] Vulners.com parser ends - {seconds} seconds/{"%.2f" % int(seconds/60)} minutes')
+
 
 def dump_data(out_file, data):
     with open(out_file, 'wb') as fOut:
@@ -106,53 +128,56 @@ def dump_data(out_file, data):
     print(f'[+] Dump {len(data)} entries to {out_file}')
 
 
-def mp_parser(in_file, out_file):
-    print('[+] MP parser starts')
-    parserDict = dict()
-    with open(in_file, 'r') as file_in:
-        print('[+] Open "%s"' % in_file)
-        csv_f = csv.reader(file_in, delimiter=';')
-        next(csv_f)  # skip header
-        i = 0
-        for line in csv_f:
-            fqdn, softName, softVersion, host, cve, level, ScanStartTime = line
-            if cve in parserDict:
-                parserDict[cve]['host'].append(host)
-                parserDict[cve]['soft'].append(softName)
-                parserDict[cve]['version'].append(softVersion)
-            else:
-                parserDict[cve] = {
-                    'host': [host],
-                    'soft': [softName],
-                    'version': [softVersion]
-                }
+def mp_parser(in_file, out_file, force=True):
+    startTime = datetime.now()
+    if force:
+        print('[+] MP parser starts')
+        parserDict = dict()
+        with open(in_file, 'r') as file_in:
+            print('[+] Open "%s"' % in_file)
+            csv_f = csv.reader(file_in, delimiter=';')
+            next(csv_f)  # skip header
+            for line in csv_f:
+                fqdn, softName, softVersion, host, cve, level, ScanStartTime = line
+                if cve in parserDict:
+                    if host not in parserDict[cve]['host']:
+                        parserDict[cve]['host'].append(host)
+                    if f'{softName}/{softVersion}' not in parserDict[cve]['soft']:
+                        parserDict[cve]['soft'].append(f'{softName}/{softVersion}')
+                else:
+                    parserDict[cve] = {
+                        'host': [host],
+                        'soft': [f'{softName}/{softVersion}'],
+                    }
 
-    if parserDict:
-        dump_data(out_file, parserDict)
-    print('[+] MP parser starts')
+        if parserDict:
+            dump_data(out_file, parserDict)
+    else:
+        with open(out_file, 'rb') as fIn:
+            parserDict = pickle.load(fIn)
+        print(f'[+] Load {len(parserDict)} entries from {out_file}')
+
+    endTime = datetime.now()
+    seconds = (endTime - startTime).seconds
+    print(f'[*] MP parser ends - {seconds} seconds/{"%.2f" % int(seconds/60)} minutes')
 
     return parserDict
 
 
 def main():
     mpFile = 'CVE from MP.csv'
-    mpOutFile = 'mp_out.pkl'
+    mpOutFile = 'mp.pkl'
     vulnersCVEFilePath = r"D:\Working\Projects\vulners.com\cve\cve.json.zip"
     vulnersOutPath = '.'
 
     startTime = datetime.now()
     print(startTime.strftime('[*] Start time: %d.%m.%Y %H:%M:%S'))
-    mp_parser(in_file=mpFile, out_file=mpOutFile)
-    vulners_parser(in_file=vulnersCVEFilePath, out_path=vulnersOutPath, search_object='id', pattern='')
+    mpDict = mp_parser(in_file=mpFile, out_file=mpOutFile, force=False)
+    vulners_parser(in_file=vulnersCVEFilePath, out_path=vulnersOutPath, search_object='id', in_dict=mpDict)
 
-    with open(mpOutFile, 'rb') as fIn:
-        searchDict = pickle.load(fIn)
-
-    # for cve in searchDict:
-    #     if len(searchDict[cve]['host']) > 1:
-    #         print(cve, searchDict[cve])
     endTime = datetime.now()
-    print('[*] Total elapsed time - {0} seconds'.format((endTime - startTime).seconds))
+    seconds = (endTime - startTime).seconds
+    print(f'[*] Total elapsed time - {seconds} seconds/{"%.2f" % int(seconds/60)} minutes')
     print(endTime.strftime('[*] End time: %d.%m.%Y %H:%M:%S'))
 
 
