@@ -47,15 +47,17 @@ def url_filter(url):
         'http://www.irfanview.com',
         'http://www.securityfocus.com',
         'http://www.zerodayinitiative.com',
+        'http://zerodayinitiative.com',
         'https://www.verisign.com',
-        'http://googlechromereleases.blogspot.com',
         'http://forums.winamp.com',
         'http://www.exploit-db.com',
+        'https://www.exploit-db.com',
         'http://www.osvdb.org',
         'http://packetstormsecurity.com',
         'http://www.vupen.com',
         'http://labs.idefense.com',
     ]
+
     for filterUrl in filterList:
         if url.startswith(filterUrl):
             return False
@@ -142,7 +144,6 @@ def vulners_parser(in_file, out_path, search_object, in_dict):
                     }
 
                     if len(references) < 1:
-                        print(id)
                         dataWithoutReferences[id] = {
                             'id': id,
                             'references': references,
@@ -203,7 +204,6 @@ def mp_parser(in_file, out_file, force=True):
                         'host': [host],
                         'soft': [f'{softName}/{softVersion}'],
                     }
-
         if parserDict:
             dump_data(out_file, parserDict)
     else:
@@ -226,7 +226,7 @@ def main():
 
     startTime = datetime.now()
     print(startTime.strftime('[*] Start time: %d.%m.%Y %H:%M:%S'))
-    mpDict = mp_parser(in_file=mpFile, out_file=mpOutFile, force=False)
+    mpDict = mp_parser(in_file=mpFile, out_file=mpOutFile, force=True)
     vulners_parser(in_file=vulnersCVEFilePath, out_path=vulnersOutPath, search_object='id', in_dict=mpDict)
 
     endTime = datetime.now()
