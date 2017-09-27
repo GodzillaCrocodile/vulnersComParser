@@ -1,28 +1,65 @@
 # 'EStroev'
 import csv
 import os
-import vulners_com
 from datetime import datetime
 from zipfile import ZipFile
 import ijson
 import pickle
 
 
-def file_writer(outPathFile, data):
-    with open(outPathFile, 'w', encoding='utf-8') as outFile:
-        for id in data:
-            outFile.write(
-                f"ID: {data[id]['id']}\n\t"
-                f"Title: {data[id]['title']}\n\t"
-                f"URL: {data[id]['url']}\n\t"
-                f"References: {'; '.join(data[id]['references'])}\n\t"
-                f"CVE: {'; '.join(data[id]['cve'])}\n\t"
-                f"CVSS: {data[id]['cvss']}\n\t"
-                # f"Host: {'; '.join(data[id]['host'])}\n\t"
-                # f"Soft: {'; '.join(data[id]['soft'])}\n\t"
-                f"Type: {data[id]['type']}\n\n"
-            )
+def file_writer(outPathFile, data, full=False):
+    if full:
+        with open(outPathFile, 'w', encoding='utf-8') as outFile:
+            for id in data:
+                outFile.write(
+                    f"ID: {data[id]['id']}\n\t"
+                    f"Title: {data[id]['title']}\n\t"
+                    f"URL: {data[id]['url']}\n\t"
+                    f"References: {'; '.join(data[id]['references'])}\n\t"
+                    f"CVE: {'; '.join(data[id]['cve'])}\n\t"
+                    f"CVSS: {data[id]['cvss']}\n\t"
+                    f"Host: {'; '.join(data[id]['host'])}\n\t"
+                    f"Soft: {'; '.join(data[id]['soft'])}\n\t"
+                    f"Type: {data[id]['type']}\n\n"
+                )
+    else:
+        with open(outPathFile, 'w', encoding='utf-8') as outFile:
+            for id in data:
+                outFile.write(
+                    f"ID: {data[id]['id']}\n\t"
+                    f"Title: {data[id]['title']}\n\t"
+                    f"URL: {data[id]['url']}\n\t"
+                    f"References: {'; '.join(data[id]['references'])}\n\t"
+                    f"CVE: {'; '.join(data[id]['cve'])}\n\t"
+                    f"CVSS: {data[id]['cvss']}\n\t"
+                    f"Type: {data[id]['type']}\n\n"
+                )
     print(f'[+] Write {len(data)} entries to {outPathFile}')
+
+
+def url_filter(url):
+    filterList = [
+        'https://web.nvd.nist.gov',
+        'http://www.us-cert.gov',
+        'http://www.securitytracker.com',
+        'http://securitytracker.com',
+        'http://archives.neohapsis.com',
+        'http://www.irfanview.com',
+        'http://www.securityfocus.com',
+        'http://www.zerodayinitiative.com',
+        'https://www.verisign.com',
+        'http://googlechromereleases.blogspot.com',
+        'http://forums.winamp.com',
+        'http://www.exploit-db.com',
+        'http://www.osvdb.org',
+        'http://packetstormsecurity.com',
+        'http://www.vupen.com',
+        'http://labs.idefense.com',
+    ]
+    for filterUrl in filterList:
+        if url.startswith(filterUrl):
+            return False
+    return True
 
 
 def vulners_parser(in_file, out_path, search_object, in_dict):
@@ -34,6 +71,7 @@ def vulners_parser(in_file, out_path, search_object, in_dict):
         print('[+] Open "%s"' % in_file)
         parser = ijson.parse(iFile)
         data = dict()
+        dataWithoutReferences = dict()
         id, references, title, url, type, descr, cve, cvss = None, [], None, None, None, None, [], None
         searchDict = {
             'id': '',
@@ -74,8 +112,9 @@ def vulners_parser(in_file, out_path, search_object, in_dict):
                 url = value
                 searchDict['url'] = url
             elif prefix == 'item._source.references.item':
-                references.append(value)
-                searchDict['references'] = references
+                if url_filter(value):
+                    references.append(value)
+                    searchDict['references'] = references
             elif prefix == 'item._source.description':
                 descr = value
                 searchDict['description'] = descr
@@ -101,6 +140,20 @@ def vulners_parser(in_file, out_path, search_object, in_dict):
                         'host': in_dict[id]['host'],
                         'soft': in_dict[id]['soft']
                     }
+
+                    if len(references) < 1:
+                        print(id)
+                        dataWithoutReferences[id] = {
+                            'id': id,
+                            'references': references,
+                            'title': title,
+                            'url': url,
+                            'type': type,
+                            'cve': cve,
+                            'cvss': cvss,
+                            'host': in_dict[id]['host'],
+                            'soft': in_dict[id]['soft']
+                        }
                     in_dict.pop(id)
                 id, references, title, url, descr, type, cve, cvss = None, [], None, None, None, None, [], None
                 continue
@@ -109,13 +162,14 @@ def vulners_parser(in_file, out_path, search_object, in_dict):
 
         if data:
             file_writer(os.path.join(out_path, 'out.txt'), data)
+        if dataWithoutReferences:
+            file_writer(os.path.join(out_path, 'out_without_references.txt'), dataWithoutReferences, full=True)
 
         if in_dict:
             with open('not_found.txt', 'w') as fOut:
                 fOut.write('\n'.join([cve for cve in in_dict]))
             print(f'[+] {len(in_dict)} entries not found. Write to "not_found.txt"')
-        # if searchDict:
-        #     dump_data(os.path.join(out_path, 'vulners.pkl'), searchDict)
+
     print(f'[+] Total processed entries: {len(in_dict) + findCount}/{totalCVECount}')
     endTime = datetime.now()
     seconds = (endTime - startTime).seconds
