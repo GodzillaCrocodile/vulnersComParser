@@ -121,9 +121,6 @@ def main():
         print('[-] You must specify one of the following objects: id, title, url, description, cve, cvss!')
         exit(-1)
     if not args.outFolder:
-        print('[-] You must specify an existing path to the output file!')
-        exit(-1)
-    if not args.outFolder:
         print('[-] You must specify an existing path to the output folder!')
         exit(-1)
     elif not os.path.exists(args.outFolder):
